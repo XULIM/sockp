@@ -116,7 +116,7 @@ int get_listener_sock()
     status = getaddrinfo(NULL, PORT, &hints, &res);
     if (status == -1)
     {
-        fprintf(stderr, "pollserver: %s\n", gai_strerror(status));
+        fprintf(stderr, "server: %s\n", gai_strerror(status));
         exit(1);
     }
 
@@ -125,20 +125,20 @@ int get_listener_sock()
         listener = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
         if (listener < 0)
         {
-            perror("pollserver (socket)");
+            perror("server (socket)");
             continue;
         }
 
         if (setsockopt(listener, SOL_SOCKET, SO_REUSEADDR,
                     &yes, sizeof(int)) == -1)
         {
-            perror("pollserver (setsockopt)");
+            perror("server (setsockopt)");
         }
 
         if (bind(listener, p->ai_addr, p->ai_addrlen) == -1)
         {
             close(listener);
-            perror("pollserver (bind)");
+            perror("server (bind)");
             continue;
         }
         
@@ -172,20 +172,20 @@ void handle_new_connection(struct pfds *pf, int listener)
     sockfd = accept(listener, (struct sockaddr*)&addr, &addrlen);
     if (sockfd == -1)
     {
-        perror("pollserver (accept)");
+        perror("server (accept)");
         return;
     }
 
     if (inet_ntop(addr.ss_family, get_in_addr((struct sockaddr*)&addr),
                 ip, sizeof(ip)) == NULL)
     {
-        fprintf(stderr, "pollserver: inet_ntop error - %s\n", strerror(errno));
+        fprintf(stderr, "server: inet_ntop error - %s\n", strerror(errno));
         close(sockfd);
         return;
     }
 
     pfds_add(pf, sockfd, POLLIN);
-    printf("pollserver: accepted connection from %s on socket %d\n", ip, sockfd);
+    printf("server: accepted connection from %s on socket %d\n", ip, sockfd);
 }
 
 void broadcast(struct pfds *pf, int listener, int sendfd, char *buf, size_t buflen)
@@ -199,7 +199,7 @@ void broadcast(struct pfds *pf, int listener, int sendfd, char *buf, size_t bufl
         {
             if (send(destfd, buf, buflen, 0) == -1)
             {
-                perror("pollserver (send)");
+                perror("server (send)");
             }
         }
     }
@@ -214,7 +214,7 @@ int main(void)
     listener = get_listener_sock();
     if (listener == -1)
     {
-        fputs("pollserver: error getting listener socket", stderr);
+        fputs("server: error getting listener socket", stderr);
         exit(1);
     }
     pf = pfds_init(PFDS_INIT_LEN);
@@ -225,7 +225,7 @@ int main(void)
         pollcnt = poll(pf->fds, pf->cnt, -1);
         if (pollcnt < 0)
         {
-            perror("pollserver (poll)");
+            perror("server (poll)");
             pfds_free(pf);
             exit(1);
         }
@@ -251,9 +251,9 @@ int main(void)
             {
                 if (nbytes == 0)
                 {
-                    printf("pollserver: socket %d hung up\n", sendfd);
+                    printf("server: socket %d hung up\n", sendfd);
                 }
-                else perror("pollserver (recv)");
+                else perror("server (recv)");
 
                 close(pf->fds[i].fd);
                 pfds_del(pf, i);

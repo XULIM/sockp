@@ -36,7 +36,7 @@ int main(int argc, char **argv)
 
     if (argc != 2)
     {
-        fputs("Usage: pollclient hostname", stderr);
+        fputs("Usage: client hostname\n", stderr);
         exit(1);
     }
 
