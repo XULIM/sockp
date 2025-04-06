@@ -207,6 +207,7 @@ void handle_new_connection(struct pfds *pf, int listener)
     int sockfd, prompt_len, nbytes;
     socklen_t addrlen;
     struct sockaddr_storage addr;
+    struct timeval tv;
     char ip[INET6_ADDRSTRLEN], username[USERNAME_LEN];
     const char *prompt = "Enter your username: ";
 
@@ -236,14 +237,23 @@ void handle_new_connection(struct pfds *pf, int listener)
         return;
     }
 
-    if ((nbytes = recv(sockfd, &username, sizeof(username)-1, 0)) <= 0)
+    tv.tv_sec = 10; // 10 sec timeout
+    tv.tv_usec = 0;
+    setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    nbytes = recv(sockfd, &username, sizeof(username)-1, 0);
+    if (nbytes == -1 && errno == EAGAIN)
     {
-        if (nbytes == 0)
-        {
-            fprintf(stderr, "User disconnected\n");
-            close(sockfd);
-        }
+        fprintf(stderr, "User timed out on socket %d.\n", sockfd);
+        close(sockfd);
+        return;
     }
+    else if (nbytes == 0)
+    {
+        fputs("User disconnected.\n", stderr);
+        close(sockfd);
+        return;
+    }
+    
     username[nbytes] = '\0';
     if (username[nbytes - 1] == '\n')
         username[nbytes - 1] = '\0';
@@ -296,7 +306,7 @@ int main(void)
             exit(1);
         }
         
-        // reading available data from sockets
+        /* reading available data from sockets */
         for (i = 0; i < pf->cnt; i++)
         {
             if (!(pf->fds[i].revents & (POLLIN | POLLHUP)))
