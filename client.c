@@ -10,12 +10,8 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 
-#define PORT "6969"
+#include "const.h"
 
-enum
-{
-    BUFLEN = 256,
-};
 
 void *get_in_addr(struct sockaddr *s)
 {

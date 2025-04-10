@@ -10,17 +10,9 @@
 #include <poll.h>
 #include <errno.h>
 
-#define PORT "6969"
+#include "const.h"
 
-enum
-{
-    BUFLEN = 256,
-    BACKLOG = 10,
-    PFDS_INIT_LEN = 5,
-    USERNAME_LEN = 32,
-};
-
-typedef struct user
+typedef struct client
 {
     int fd;
     char name[USERNAME_LEN];
@@ -187,7 +179,7 @@ void broadcast_join(struct pfds *pf, int listener, int newfd, const char *userna
 {
     int i, destfd;
     char msg[BUFLEN];
-    snprintf(msg, sizeof(msg), "%s has joined the chat.\n");
+    snprintf(msg, sizeof(msg), "%s has joined the chat.\n", username);
 
     for (i = 0; i < pf->cnt; i++)
     {
@@ -200,6 +192,74 @@ void broadcast_join(struct pfds *pf, int listener, int newfd, const char *userna
             }
         }
     }
+}
+
+int get_new_username(int sockfd, char *username, size_t username_len)
+{
+    struct timeval tv;
+    int nbytes;
+    size_t prompt_len, uname_err_len;
+    const char *prompt = "Enter your username: ";
+    const char *uname_err = "Username can be longer than 32 characters.";
+    
+    prompt_len = strlen(prompt);
+    uname_err_len = strlen(uname_err);
+    tv.tv_sec = 10;
+    tv.tv_usec = 0;
+    setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+
+
+    /* TODO: it does not re-prompt username correctly
+     * and instead it chops the username at 32 bytes and sends
+     * the rest of the characters as a separate message after 
+     * broadcasting that the user has joined the channel */
+
+    /* keep prompting until a valid username */
+    for (;;)
+    {
+        if (send(sockfd, prompt, prompt_len, 0) == -1)
+        {
+            perror("Failed prompting username (send)");
+            close(sockfd);
+            return -1;
+        }
+
+
+        nbytes = recv(sockfd, username, username_len, 0);
+        if (nbytes == -1)
+        {
+            if (errno == EAGAIN)
+            {
+                fprintf(stderr, "User on socket %d timed out.\n", sockfd);
+            }
+            else perror("Failed to get username (recv)");
+
+            close(sockfd);
+            return 0;
+        }
+        else if (nbytes == 0)
+        {
+            fprintf(stderr, "User on socket %d hung up.\n", sockfd);
+            close(sockfd);
+            return 0;
+        }
+        else if (nbytes > (int)username_len)
+        {
+            if (send(sockfd, uname_err, uname_err_len, 0) == -1)
+            {
+                perror("Error re-prompting username");
+                close(sockfd);
+                return -1;
+            }
+            continue;
+        }
+
+        break;
+    }
+
+    /* TODO: possibly null-terminate username */
+
+    return nbytes;
 }
 
 void handle_new_connection(struct pfds *pf, int listener)
@@ -264,14 +324,55 @@ void handle_new_connection(struct pfds *pf, int listener)
     broadcast_join(pf, listener, sockfd, username);
 }
 
-void broadcast(struct pfds *pf, int listener, int sendfd, char *buf, size_t buflen)
+int recv_msg(struct pfds *pf, int *idx, char *buf, size_t buflen)
+{
+    int sendfd;
+    int nbytes;
+
+    sendfd = pf->fds[*idx].fd;
+    nbytes = recv(sendfd, buf, buflen, 0);
+    if (nbytes <= 0)
+    {
+        if (nbytes == 0)
+        {
+            fprintf(stderr, "Client on socket %d hung up.\n", sendfd);
+        }
+        else
+        {
+            perror("server (recv)");
+        }
+
+        close(sendfd);
+        pfds_del(pf, *idx);
+        (*idx)--;
+        return 0;
+    }
+
+    /* user msg too long */
+    if (nbytes > BUFLEN)
+    {
+        fprintf(stderr, "recv_msg: buffer overflow.\n");
+        return -1;
+    }
+
+    /* append newline to end of buffer */
+    if (buf[nbytes-1] != '\n')
+    {
+        buf[nbytes] = '\n';
+        nbytes++;
+    }
+
+    return nbytes;
+}
+
+void broadcast(struct pfds *pf, int listener, int *idx, char *buf, size_t buflen)
 {
     int i, destfd;
 
-    for (int i = 0; i < pf->cnt; i++)
+    for (i = 0; i < pf->cnt; i++)
     {
         destfd = pf->fds[i].fd;
-        if (destfd != listener && destfd != sendfd)
+        if (destfd != listener && destfd != pf->fds[*idx].fd)
         {
             if (send(destfd, buf, buflen, 0) == -1)
             {
@@ -283,7 +384,7 @@ void broadcast(struct pfds *pf, int listener, int sendfd, char *buf, size_t bufl
 
 int main(void)
 {
-    int listener, pollcnt, nbytes, sendfd, i;
+    int listener, pollcnt, nbytes, i;
     char buf[BUFLEN];
     struct pfds *pf;
 
@@ -294,7 +395,7 @@ int main(void)
         exit(1);
     }
     pf = pfds_init(PFDS_INIT_LEN);
-    pfds_add(pf, listener, POLLIN, "SERVER"); // listener
+    pfds_add(pf, listener, POLLIN, "SERVER");
 
     for (;;)
     {
@@ -320,28 +421,13 @@ int main(void)
                 continue;
             }
 
-            /* recv user message */
-            sendfd = pf->fds[i].fd;
-            nbytes = recv(sendfd, buf, sizeof(buf)-1, 0);
-            if (nbytes <= 0)
-            {
-                if (nbytes == 0)
-                {
-                    printf("server: socket %d hung up\n", sendfd);
-                }
-                else perror("server (recv)");
-
-                close(pf->fds[i].fd);
-                pfds_del(pf, i);
-                i--;
+            nbytes = recv_msg(pf, &i, buf, sizeof(buf)-1);
+            if (nbytes == 0)
                 continue;
-            }
-            if (buf[nbytes-1] != '\n')
-            {
-                buf[nbytes] = '\n';
-                nbytes++;
-            }
-            broadcast(pf, listener, sendfd, buf, nbytes);
+            else if (nbytes < 0)
+                exit(1);
+
+            broadcast(pf, listener, &i, buf, nbytes);
         }
     }
 }
