@@ -21,7 +21,7 @@ files, screen share, and stream.
 **Authentification:**
 - Probably need user authentification.
 
-## TODO:
+## Agenda:
 - [x] Code up the server.
     - [x] accept and recv
 - [x] Code up the client.
@@ -37,6 +37,12 @@ files, screen share, and stream.
 - [ ] Add OAuth if needed.
 - [ ] Ship that bih agane.
 - [ ] Masterful work Clap.
+
+## Bug Fixes
+- [ ] Handle usernames with a length longer than USERNAME_LEN
+- [ ] Handle messages with a length longer than BUFLEN
+- [ ] Fix the blocking issue when prompting usernames from different users
+    - Maybe prompt the username on client side?
 
 ## Update Log
 
