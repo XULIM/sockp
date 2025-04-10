@@ -33,16 +33,17 @@ files, screen share, and stream.
 - [ ] Data serialization?
 - [ ] Add DB if needed.
 - [ ] Code up a GUI for client.
-- [ ] Ship that bih.
+- [ ] VER 1.0
+- [ ] Add ability to send files.
+- [ ] Add voice chat.
 - [ ] Add OAuth if needed.
-- [ ] Ship that bih agane.
-- [ ] Masterful work Clap.
 
 ## Bug Fixes
 - [ ] Handle usernames with a length longer than USERNAME_LEN
 - [ ] Handle messages with a length longer than BUFLEN
-- [ ] Fix the blocking issue when prompting usernames from different users
-    - Maybe prompt the username on client side?
+- [ ] Handle usernames on the client side on first join and just have the server
+  listen until there is a valid username instead of sending the username prompt
+  from the server.
 
 ## Update Log
 
