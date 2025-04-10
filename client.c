@@ -22,25 +22,17 @@ void *get_in_addr(struct sockaddr *s)
     return &(((struct sockaddr_in6*)s)->sin6_addr);
 }
 
-
-int main(int argc, char **argv)
+int get_serverfd(char *address)
 {
-    int serverfd, status, nbytes, npoll;
-    char buf[BUFLEN], s[INET6_ADDRSTRLEN];
+    int status, serverfd;
     struct addrinfo hints, *p, *serverinfo;
-    struct pollfd fds[2]; // for stdin and serverfd
-
-    if (argc != 2)
-    {
-        fputs("Usage: client hostname\n", stderr);
-        exit(1);
-    }
+    char s[INET6_ADDRSTRLEN];
 
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
 
-    status = getaddrinfo(argv[1], PORT, &hints, &serverinfo);
+    status = getaddrinfo(address, PORT, &hints, &serverinfo);
     if (status != 0)
     {
         fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(status));
@@ -78,6 +70,24 @@ int main(int argc, char **argv)
     printf("client: connected to server %s.\n", s);
 
     freeaddrinfo(serverinfo);
+
+    return serverfd;
+}
+
+
+int main(int argc, char **argv)
+{
+    int serverfd, nbytes, npoll;
+    char buf[BUFLEN];
+    struct pollfd fds[2]; // for stdin and serverfd
+
+    if (argc != 2)
+    {
+        fputs("Usage: client hostname\n", stderr);
+        exit(1);
+    }
+
+    serverfd = get_serverfd(argv[1]);
     
     fds[0].fd = STDIN_FILENO;
     fds[0].events = POLLIN;
@@ -97,6 +107,7 @@ int main(int argc, char **argv)
             exit(1);
         }
 
+        /* user send */
         if (fds[0].revents & POLLIN)
         {
             if (fgets(buf, BUFLEN, stdin) == NULL)
@@ -117,6 +128,7 @@ int main(int argc, char **argv)
             memset(&buf, 0, BUFLEN);
         }
 
+        /* user receive */
         if (fds[1].revents & POLLIN)
         {
             nbytes = recv(fds[1].fd, buf, BUFLEN-1, 0);

@@ -194,6 +194,7 @@ void broadcast_join(struct pfds *pf, int listener, int newfd, const char *userna
     }
 }
 
+/* not used right now */
 int get_new_username(int sockfd, char *username, size_t username_len)
 {
     struct timeval tv;
@@ -208,58 +209,36 @@ int get_new_username(int sockfd, char *username, size_t username_len)
     tv.tv_usec = 0;
     setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
-
-    /* TODO: it does not re-prompt username correctly
-     * and instead it chops the username at 32 bytes and sends
-     * the rest of the characters as a separate message after 
-     * broadcasting that the user has joined the channel */
-
-    /* keep prompting until a valid username */
-    for (;;)
+    if (send(sockfd, prompt, prompt_len, 0) == -1)
     {
-        if (send(sockfd, prompt, prompt_len, 0) == -1)
-        {
-            perror("Failed prompting username (send)");
-            close(sockfd);
-            return -1;
-        }
+        perror("Failed prompting username (send)");
+        close(sockfd);
+        return -1;
+    }
 
 
-        nbytes = recv(sockfd, username, username_len, 0);
-        if (nbytes == -1)
+    nbytes = recv(sockfd, username, username_len, 0);
+    if (nbytes == -1)
+    {
+        if (errno == EAGAIN)
         {
-            if (errno == EAGAIN)
-            {
-                fprintf(stderr, "User on socket %d timed out.\n", sockfd);
-            }
-            else perror("Failed to get username (recv)");
+            fprintf(stderr, "User on socket %d timed out.\n", sockfd);
+        }
+        else perror("Failed to get username (recv)");
 
-            close(sockfd);
-            return 0;
-        }
-        else if (nbytes == 0)
-        {
-            fprintf(stderr, "User on socket %d hung up.\n", sockfd);
-            close(sockfd);
-            return 0;
-        }
-        else if (nbytes > (int)username_len)
-        {
-            if (send(sockfd, uname_err, uname_err_len, 0) == -1)
-            {
-                perror("Error re-prompting username");
-                close(sockfd);
-                return -1;
-            }
-            continue;
-        }
-
-        break;
+        close(sockfd);
+        return 0;
+    }
+    else if (nbytes == 0)
+    {
+        fprintf(stderr, "User on socket %d hung up.\n", sockfd);
+        close(sockfd);
+        return 0;
     }
 
     /* TODO: possibly null-terminate username */
 
-    return nbytes;
+    return (nbytes > USERNAME_LEN ? USERNAME_LEN : nbytes);
 }
 
 void handle_new_connection(struct pfds *pf, int listener)
@@ -284,7 +263,7 @@ void handle_new_connection(struct pfds *pf, int listener)
     if (inet_ntop(addr.ss_family, get_in_addr((struct sockaddr*)&addr),
                 ip, sizeof(ip)) == NULL)
     {
-        fprintf(stderr, "server: inet_ntop error - %s\n", strerror(errno));
+        fprintf(stderr, "inet_ntop error - %s\n", strerror(errno));
         close(sockfd);
         return;
     }
