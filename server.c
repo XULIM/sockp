@@ -54,7 +54,8 @@ private void pfds_free(struct pfds *pf)
     free(pf);
 }
 
-private void pfds_add(struct pfds *pf, int sockfd, int events, char username[])
+private void pfds_add(struct pfds *pf, int sockfd, int events,
+        char *username, int username_len)
 {
     struct pollfd *tmp_fds;
     Client *tmp_cl;
@@ -77,13 +78,21 @@ private void pfds_add(struct pfds *pf, int sockfd, int events, char username[])
         pf->users = tmp_cl;
     }
 
+    /* TODO: re-prompt username instead of closing connection,
+     * or handle this on the client side. */
+    if (username_len > USERNAME_LEN)
+    {
+        close(sockfd);
+        fprintf("pfds_add: closed socket %d since the given username exceeds %d chars",
+                socket, USERNAME_LEN);
+        return;
+    }
+    strlcpy(pf->users[pf->cnt].name, username, username_len);
+
+    pf->users[pf->cnt].fd = sockfd;
     pf->fds[pf->cnt].fd = sockfd;
     pf->fds[pf->cnt].events = events;
     pf->fds[pf->cnt].revents = 0;
-
-    /* TODO: check users */
-    pf->users[pf->cnt].fd = sockfd;
-    strcpy(pf->users[pf->cnt].name, username);
 
     pf->cnt++;
 }
@@ -260,6 +269,8 @@ private void handle_new_connection(struct pfds *pf, int listener)
         return;
     }
 
+    /* TODO: abstract this into function */
+    /* TODO: update to first accept username */
     /* prompt for username */
     if (send(sockfd, prompt, prompt_len, 0) == -1)
     {
@@ -285,6 +296,7 @@ private void handle_new_connection(struct pfds *pf, int listener)
         return;
     }
     
+    /* TODO: clean this thing up */
     username[nbytes] = '\0';
     if (username[nbytes - 1] == '\n')
         username[nbytes - 1] = '\0';
