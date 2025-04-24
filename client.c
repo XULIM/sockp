@@ -12,6 +12,7 @@
 
 #include "const.h"
 
+
 private int get_serverfd(char *address)
 {
     int status, serverfd;
@@ -86,6 +87,8 @@ int main(int argc, char **argv)
     fds[1].fd = serverfd;
     fds[1].events = POLLIN;
     fds[1].revents = 0;
+
+    /* TODO: prompt for username and send to server */
 
     for (;;)
     {
