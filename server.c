@@ -26,9 +26,9 @@ struct pfds
     Client *users;
 };
 
-struct pfds *pfds_init(int length)
+private struct pfds *pfds_init(int length)
 {
-    struct pfds *pf = (struct pfds*)malloc(sizeof(struct pfds));
+    struct pfds *pf = (struct pfds*)malloc(sizeof(*pf));
     if (pf == NULL)
     {
         perror("pfds_init");
@@ -47,14 +47,14 @@ struct pfds *pfds_init(int length)
     return pf;
 }
 
-void pfds_free(struct pfds *pf)
+private void pfds_free(struct pfds *pf)
 {
     free(pf->fds);
     free(pf->users);
     free(pf);
 }
 
-void pfds_add(struct pfds *pf, int sockfd, int events, char username[])
+private void pfds_add(struct pfds *pf, int sockfd, int events, char username[])
 {
     struct pollfd *tmp_fds;
     Client *tmp_cl;
@@ -88,14 +88,14 @@ void pfds_add(struct pfds *pf, int sockfd, int events, char username[])
     pf->cnt++;
 }
 
-void pfds_del(struct pfds *pf, int index)
+private void pfds_del(struct pfds *pf, int index)
 {
     pf->cnt--;
     pf->fds[index] = pf->fds[pf->cnt];
     pf->users[index] = pf->users[pf->cnt];
 }
 
-void pfds_print(struct pfds *pf)
+private void pfds_print(struct pfds *pf)
 {
     printf("pfds len: %d\n", pf->len);
     printf("pfds cnt: %d\n", pf->cnt);
@@ -108,16 +108,7 @@ void pfds_print(struct pfds *pf)
     }
 }
 
-void *get_in_addr(struct sockaddr *s)
-{
-    if (s->sa_family == AF_INET)
-    {
-        return &(((struct sockaddr_in*)s)->sin_addr);
-    }
-    return &(((struct sockaddr_in6*)s)->sin6_addr);
-}
-
-int get_listener_sock()
+private int get_listener_sock()
 {
     int listener, status, yes=1;
     struct addrinfo hints, *p, *res;
@@ -175,7 +166,7 @@ int get_listener_sock()
     return listener;
 }
 
-void broadcast_join(struct pfds *pf, int listener, int newfd, const char *username)
+private void broadcast_join(struct pfds *pf, int listener, int newfd, const char *username)
 {
     int i, destfd;
     char msg[BUFLEN];
@@ -194,8 +185,8 @@ void broadcast_join(struct pfds *pf, int listener, int newfd, const char *userna
     }
 }
 
-/* not used right now */
-int get_new_username(int sockfd, char *username, size_t username_len)
+/* not used right now
+private int get_new_username(int sockfd, char *username, size_t username_len)
 {
     struct timeval tv;
     int nbytes;
@@ -236,12 +227,13 @@ int get_new_username(int sockfd, char *username, size_t username_len)
         return 0;
     }
 
-    /* TODO: possibly null-terminate username */
+    // TODO: possibly null-terminate username 
 
     return (nbytes > USERNAME_LEN ? USERNAME_LEN : nbytes);
 }
+*/
 
-void handle_new_connection(struct pfds *pf, int listener)
+private void handle_new_connection(struct pfds *pf, int listener)
 {
     int sockfd, prompt_len, nbytes;
     socklen_t addrlen;
@@ -301,9 +293,14 @@ void handle_new_connection(struct pfds *pf, int listener)
     pfds_add(pf, sockfd, POLLIN, username);
     printf("server: accepted connection from %s on socket %d\n", ip, sockfd);
     broadcast_join(pf, listener, sockfd, username);
+
 }
 
-int recv_msg(struct pfds *pf, int *idx, char *buf, size_t buflen)
+/* TODO: finish bufcpy (secure strcpy), copies str with a length of no greater
+ * than MAX_BUFLEN and dynamically resizes the buf if needed */
+void bufcpy(char *str, int strlen, char *buf, int buflen);
+
+private int recv_msg(struct pfds *pf, int *idx, char *buf, size_t buflen)
 {
     int sendfd;
     int nbytes;
@@ -327,10 +324,12 @@ int recv_msg(struct pfds *pf, int *idx, char *buf, size_t buflen)
         return 0;
     }
 
-    /* user msg too long */
-    if (nbytes > BUFLEN)
+    /* msg buf check */
+    if (nbytes > MAX_BUFLEN)
     {
-        fprintf(stderr, "recv_msg: buffer overflow.\n");
+        fprintf(stderr,
+                "recv_msg: user message cannot be longer than %d characters.\n",
+                MAX_BUFLEN);
         return -1;
     }
 
@@ -344,7 +343,7 @@ int recv_msg(struct pfds *pf, int *idx, char *buf, size_t buflen)
     return nbytes;
 }
 
-void broadcast(struct pfds *pf, int listener, int *idx, char *buf, size_t buflen)
+private void broadcast(struct pfds *pf, int listener, int *idx, char *buf, size_t buflen)
 {
     int i, destfd;
 
