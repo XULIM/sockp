@@ -12,17 +12,7 @@
 
 #include "const.h"
 
-
-void *get_in_addr(struct sockaddr *s)
-{
-    if (s->sa_family == AF_INET)
-    {
-        return &(((struct sockaddr_in*)s)->sin_addr);
-    }
-    return &(((struct sockaddr_in6*)s)->sin6_addr);
-}
-
-int get_serverfd(char *address)
+private int get_serverfd(char *address)
 {
     int status, serverfd;
     struct addrinfo hints, *p, *serverinfo;
