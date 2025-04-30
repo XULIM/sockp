@@ -12,12 +12,14 @@
 
 #include "const.h"
 
-typedef struct client
+typedef struct client Client;
+struct client
 {
     int fd;
     char name[USERNAME_LEN];
-} Client;
+};
 
+typedef struct pfds Ports;
 struct pfds
 {
     int cnt;
@@ -78,17 +80,7 @@ private void pfds_add(struct pfds *pf, int sockfd, int events,
         pf->users = tmp_cl;
     }
 
-    /* TODO: re-prompt username instead of closing connection,
-     * or handle this on the client side. */
-    if (username_len > USERNAME_LEN)
-    {
-        close(sockfd);
-        fprintf("pfds_add: closed socket %d since the given username exceeds %d chars",
-                socket, USERNAME_LEN);
-        return;
-    }
     strlcpy(pf->users[pf->cnt].name, username, username_len);
-
     pf->users[pf->cnt].fd = sockfd;
     pf->fds[pf->cnt].fd = sockfd;
     pf->fds[pf->cnt].events = events;
@@ -104,6 +96,7 @@ private void pfds_del(struct pfds *pf, int index)
     pf->users[index] = pf->users[pf->cnt];
 }
 
+/*
 private void pfds_print(struct pfds *pf)
 {
     printf("pfds len: %d\n", pf->len);
@@ -116,6 +109,7 @@ private void pfds_print(struct pfds *pf)
         printf("%*slistener events: %d\n", 4, " ", pf->fds[i].events);
     }
 }
+*/
 
 private int get_listener_sock()
 {
@@ -194,65 +188,31 @@ private void broadcast_join(struct pfds *pf, int listener, int newfd, const char
     }
 }
 
-/* not used right now
-private int get_new_username(int sockfd, char *username, size_t username_len)
+/* Receives the username on sockfd.
+ * Returns 0 on failure, and username is set to ("Anonymous %d", sockfd).
+ * Otherwise, return the number of bytes received. */
+private int recv_username(int sockfd, char *username, int uname_len)
 {
-    struct timeval tv;
     int nbytes;
-    size_t prompt_len, uname_err_len;
-    const char *prompt = "Enter your username: ";
-    const char *uname_err = "Username can be longer than 32 characters.";
-    
-    prompt_len = strlen(prompt);
-    uname_err_len = strlen(uname_err);
-    tv.tv_sec = 10;
-    tv.tv_usec = 0;
-    setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
 
-    if (send(sockfd, prompt, prompt_len, 0) == -1)
+    nbytes = recv(sockfd, username, uname_len, 0);
+    if (nbytes == -1 || (nbytes == 1 && iscntrl(username[0])))
     {
-        perror("Failed prompting username (send)");
-        close(sockfd);
-        return -1;
-    }
-
-
-    nbytes = recv(sockfd, username, username_len, 0);
-    if (nbytes == -1)
-    {
-        if (errno == EAGAIN)
-        {
-            fprintf(stderr, "User on socket %d timed out.\n", sockfd);
-        }
-        else perror("Failed to get username (recv)");
-
-        close(sockfd);
-        return 0;
-    }
-    else if (nbytes == 0)
-    {
-        fprintf(stderr, "User on socket %d hung up.\n", sockfd);
-        close(sockfd);
+        snprintf(username, uname_len, "Anonymous %d", sockfd);
         return 0;
     }
 
-    // TODO: possibly null-terminate username 
-
-    return (nbytes > USERNAME_LEN ? USERNAME_LEN : nbytes);
+    return nbytes;
 }
-*/
 
 private void handle_new_connection(struct pfds *pf, int listener)
 {
-    int sockfd, prompt_len, nbytes;
+    int sockfd, nbytes, uname_len;
     socklen_t addrlen;
     struct sockaddr_storage addr;
-    struct timeval tv;
     char ip[INET6_ADDRSTRLEN], username[USERNAME_LEN];
-    const char *prompt = "Enter your username: ";
-
-    prompt_len = strlen(prompt);
     
+    uname_len = sizeof(username);
     addrlen = sizeof(addr);
     sockfd = accept(listener, (struct sockaddr*)&addr, &addrlen);
     if (sockfd == -1)
@@ -269,48 +229,19 @@ private void handle_new_connection(struct pfds *pf, int listener)
         return;
     }
 
-    /* TODO: abstract this into function */
-    /* TODO: update to first accept username */
-    /* prompt for username */
-    if (send(sockfd, prompt, prompt_len, 0) == -1)
+    nbytes = recv_username(sockfd, username, uname_len);
+    if (nbytes == 0)
     {
-        perror("send");
-        close(sockfd);
-        return;
+        perror("recv");
     }
+    /* Null-terminate username */
+    term_str(username, nbytes, uname_len, CH_NULL);
 
-    tv.tv_sec = 10; // 10 sec timeout
-    tv.tv_usec = 0;
-    setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-    nbytes = recv(sockfd, &username, sizeof(username)-1, 0);
-    if (nbytes == -1 && errno == EAGAIN)
-    {
-        fprintf(stderr, "User timed out on socket %d.\n", sockfd);
-        close(sockfd);
-        return;
-    }
-    else if (nbytes == 0)
-    {
-        fputs("User disconnected.\n", stderr);
-        close(sockfd);
-        return;
-    }
-    
-    /* TODO: clean this thing up */
-    username[nbytes] = '\0';
-    if (username[nbytes - 1] == '\n')
-        username[nbytes - 1] = '\0';
-    /* END username prompt */
-
-    pfds_add(pf, sockfd, POLLIN, username);
+    pfds_add(pf, sockfd, POLLIN, username, nbytes);
     printf("server: accepted connection from %s on socket %d\n", ip, sockfd);
     broadcast_join(pf, listener, sockfd, username);
 
 }
-
-/* TODO: finish bufcpy (secure strcpy), copies str with a length of no greater
- * than MAX_BUFLEN and dynamically resizes the buf if needed */
-void bufcpy(char *str, int strlen, char *buf, int buflen);
 
 private int recv_msg(struct pfds *pf, int *idx, char *buf, size_t buflen)
 {
@@ -345,12 +276,7 @@ private int recv_msg(struct pfds *pf, int *idx, char *buf, size_t buflen)
         return -1;
     }
 
-    /* append newline to end of buffer */
-    if (buf[nbytes-1] != '\n')
-    {
-        buf[nbytes] = '\n';
-        nbytes++;
-    }
+    term_str(buf, nbytes, buflen, CH_NEWLINE);
 
     return nbytes;
 }
@@ -385,7 +311,7 @@ int main(void)
         exit(1);
     }
     pf = pfds_init(PFDS_INIT_LEN);
-    pfds_add(pf, listener, POLLIN, "SERVER");
+    pfds_add(pf, listener, POLLIN, "SERVER", 6);
 
     for (;;)
     {
