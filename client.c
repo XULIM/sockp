@@ -13,6 +13,8 @@
 #include "const.h"
 
 
+/* Gets the server file descriptor given the address in characters,
+ * i.e. "192.168.0.15". Returns the serverfd on success, -1 otherwise. */
 private int get_serverfd(char *address)
 {
     int status, serverfd;
@@ -27,7 +29,7 @@ private int get_serverfd(char *address)
     if (status != 0)
     {
         fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(status));
-        exit(1);
+        return -1;
     }
 
     for (p = serverinfo; p != NULL; p = p->ai_next)
@@ -51,9 +53,9 @@ private int get_serverfd(char *address)
     
     if (p == NULL)
     {
-        fputs("clinet: failed to connect", stderr);
+        fputs("clinet: failed to connect\n", stderr);
         freeaddrinfo(serverinfo);
-        exit(1);
+        return -1;
     }
 
     inet_ntop(p->ai_family, get_in_addr((struct sockaddr*)p->ai_addr),
@@ -65,20 +67,70 @@ private int get_serverfd(char *address)
     return serverfd;
 }
 
+private int is_valid_username(char *username, int uname_len)
+{
+    int actual_len = 0;
+
+    if (fgets(username, sizeof(username), stdin) == NULL)
+    {
+        return 0;
+    }
+
+    actual_len = strlen(username);
+    if (actual_len <= 0 || actual_len > uname_len)
+    {
+        return 0;
+    }
+
+    return actual_len;
+}
+
+private int get_username(char *username, int uname_len)
+{
+    int actual_len;
+
+    printf("Please input your username (max %d characters): ", uname_len);
+    while (!(actual_len = is_valid_username(username, uname_len)))
+    {
+        printf("Please input your username (max %d characters): ", uname_len);
+    }
+    /* Null-terminate username */
+    term_str(username, actual_len, uname_len, CH_NULL);
+
+    return actual_len;
+}
+
+private int send_username(int serverfd)
+{
+    int uname_len;
+    char username[USERNAME_LEN];
+
+    while ((uname_len = get_username(username, sizeof(username) - 1)) <= 0);
+    if (send(serverfd, username, uname_len, 0) == -1)
+    {
+        fprintf(stderr, "Could not send username to server.\n");
+        perror("send");
+        return 1;
+    }
+    return 0;
+}
 
 int main(int argc, char **argv)
 {
-    int serverfd, nbytes, npoll;
+    int serverfd, nbytes, npoll, buflen;
     char buf[BUFLEN];
-    struct pollfd fds[2]; // for stdin and serverfd
+    struct pollfd fds[2];
 
     if (argc != 2)
     {
-        fputs("Usage: client hostname\n", stderr);
+        fprintf(stderr, "Usage: %s hostname\n", argv[0]);
         exit(1);
     }
 
-    serverfd = get_serverfd(argv[1]);
+    if ((serverfd = get_serverfd(argv[1])) == -1)
+    {
+        exit(1);
+    }
     
     fds[0].fd = STDIN_FILENO;
     fds[0].events = POLLIN;
@@ -88,8 +140,12 @@ int main(int argc, char **argv)
     fds[1].events = POLLIN;
     fds[1].revents = 0;
 
-    /* TODO: prompt for username and send to server */
+    if (send_username(serverfd) != 0)
+    {
+        return 1;
+    }
 
+    buflen = sizeof(buf);
     for (;;)
     {
         npoll = poll(fds, 2, -1);
@@ -136,7 +192,7 @@ int main(int argc, char **argv)
                 exit(1);
             }
 
-            buf[nbytes] = '\0';
+            term_str(buf, nbytes, buflen, CH_NEWLINE);
             printf("%s", buf);
             fflush(stdout);
             memset(&buf, 0, BUFLEN);
