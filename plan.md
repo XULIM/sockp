@@ -63,3 +63,18 @@ time for user authentification and maybe making a database for the users.
 Maybe I should consider finishing the base functionalities of the server first
 (i.e. processing files and voice messages, do people even use voice messages?)
 
+
+2025-05-07 --
+
+Now accepts the username on client side, the server only receives.
+
+Need to be able to identify who sent the message, so adding the username in
+front of the message would be good.
+
+Then maybe code up an UI first then add DB and Auth?
+
+2025-05-10 --
+
+Voice chat with datagram socket.
+
+Data serialization needed.
