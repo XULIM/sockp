@@ -169,18 +169,18 @@ private int get_listener_sock()
     return listener;
 }
 
-private void broadcast_join(struct pfds *pf, int listener, int newfd, const char *username)
+private void broadcast_join(struct pfds *pf, int listener, int newfd, char *username)
 {
     int i, destfd;
     char msg[BUFLEN];
-    snprintf(msg, sizeof(msg), "%s has joined the chat.\n", username);
 
+    snprintf(msg, BUFLEN, "%s joined.", username);
     for (i = 0; i < pf->cnt; i++)
     {
         destfd = pf->fds[i].fd;
         if (destfd != listener && destfd != newfd)
         {
-            if (send(destfd, msg, strlen(msg), 0) == -1)
+            if (send(destfd, msg, BUFLEN, 0) == -1)
             {
                 perror("broadcast_join (send)");
             }
@@ -207,12 +207,11 @@ private int recv_username(int sockfd, char *username, int uname_len)
 
 private void handle_new_connection(struct pfds *pf, int listener)
 {
-    int sockfd, nbytes, uname_len;
+    int sockfd, nbytes;
     socklen_t addrlen;
     struct sockaddr_storage addr;
     char ip[INET6_ADDRSTRLEN], username[USERNAME_LEN];
     
-    uname_len = sizeof(username);
     addrlen = sizeof(addr);
     sockfd = accept(listener, (struct sockaddr*)&addr, &addrlen);
     if (sockfd == -1)
@@ -229,20 +228,25 @@ private void handle_new_connection(struct pfds *pf, int listener)
         return;
     }
 
-    nbytes = recv_username(sockfd, username, uname_len);
+    nbytes = recv_username(sockfd, username, USERNAME_LEN);
     if (nbytes == 0)
     {
         perror("recv");
     }
     /* Null-terminate username */
-    term_str(username, nbytes, uname_len, CH_NULL);
+    term_str(username, nbytes, USERNAME_LEN, CH_NULL);
 
     pfds_add(pf, sockfd, POLLIN, username, nbytes);
-    printf("server: accepted connection from %s on socket %d\n", ip, sockfd);
+    printf("User %s connected on socket %d as %s.\n", ip, sockfd, username);
     broadcast_join(pf, listener, sockfd, username);
 
 }
 
+/* Receives a string from the user on the socket indicated by pf->fds[*idx].fd
+ * and writes it to buf.
+ *
+ * Returns the number of bytes received on success; -1 if it exceeds buflen; 0
+ * if the number of bytes received is less than or equal to 0. */
 private int recv_msg(struct pfds *pf, int *idx, char *buf, size_t buflen)
 {
     int sendfd;
@@ -254,7 +258,8 @@ private int recv_msg(struct pfds *pf, int *idx, char *buf, size_t buflen)
     {
         if (nbytes == 0)
         {
-            fprintf(stderr, "Client on socket %d hung up.\n", sendfd);
+            fprintf(stderr, "recv_msg: user %s on socket %d hung up.\n",
+                    pf->users[*idx].name, sendfd);
         }
         else
         {
@@ -268,11 +273,11 @@ private int recv_msg(struct pfds *pf, int *idx, char *buf, size_t buflen)
     }
 
     /* msg buf check */
-    if (nbytes > MAX_BUFLEN)
+    if (nbytes > (int)buflen)
     {
         fprintf(stderr,
-                "recv_msg: user message cannot be longer than %d characters.\n",
-                MAX_BUFLEN);
+                "recv_msg: user message cannot be longer than %lu characters.\n",
+                buflen);
         return -1;
     }
 
@@ -281,6 +286,8 @@ private int recv_msg(struct pfds *pf, int *idx, char *buf, size_t buflen)
     return nbytes;
 }
 
+/* Sends buf of buflen to all sockets in pf, excluding the listener and self,
+ * which indicated by idx. */
 private void broadcast(struct pfds *pf, int listener, int *idx, char *buf, size_t buflen)
 {
     int i, destfd;
@@ -307,7 +314,7 @@ int main(void)
     listener = get_listener_sock();
     if (listener == -1)
     {
-        fputs("server: error getting listener socket", stderr);
+        fputs("main: error getting listener socket", stderr);
         exit(1);
     }
     pf = pfds_init(PFDS_INIT_LEN);
@@ -344,6 +351,7 @@ int main(void)
                 exit(1);
 
             broadcast(pf, listener, &i, buf, nbytes);
+            memset(buf, CH_NULL, sizeof(buf));
         }
     }
 }

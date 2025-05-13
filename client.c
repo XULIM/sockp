@@ -53,38 +53,67 @@ private int get_serverfd(char *address)
     
     if (p == NULL)
     {
-        fputs("clinet: failed to connect\n", stderr);
+        fputs("get_serverfd: failed to connect\n", stderr);
         freeaddrinfo(serverinfo);
         return -1;
     }
 
     inet_ntop(p->ai_family, get_in_addr((struct sockaddr*)p->ai_addr),
             s, sizeof(s));
-    printf("client: connected to server %s.\n", s);
+    printf("get_serverfd: connected to server %s.\n", s);
 
     freeaddrinfo(serverinfo);
 
     return serverfd;
 }
 
+/* Receives and checks if the username is within the valid length.
+ *
+ * Returns the length of the username string received on success, 
+ * 0 on error or if any of the characters in there is not alphanumeric, 
+ * or when the number of bytes received is less than MIN_USERNAME_LEN
+ * or greater than uname_len. */
 private int is_valid_username(char *username, int uname_len)
 {
-    int actual_len = 0;
+    int i, actual_len = 0;
 
-    if (fgets(username, sizeof(username), stdin) == NULL)
+    if (fgets(username, uname_len, stdin) == NULL)
     {
         return 0;
     }
 
     actual_len = strlen(username);
-    if (actual_len <= 0 || actual_len > uname_len)
+    if (actual_len < MIN_USERNAME_LEN)
     {
+        fprintf(stderr, "Username cannot be less than %d characters.\n",
+                MIN_USERNAME_LEN);
         return 0;
+    }
+    if (actual_len > uname_len)
+    {
+        fprintf(stderr, "Username cannot be greater than %d characters.\n",
+                uname_len);
+        return 0;
+    }
+
+    /* note: fgets reads the \n character on enter */
+    for (i = 0; i < actual_len - 1; i++)
+    {
+        if (!isalnum(username[i]))
+        {
+            fprintf(stderr, "Username has to be alphanumeric.\n");
+            return 0;
+        }
     }
 
     return actual_len;
 }
 
+/* Keeps on prompting username until valid (see is_valid_username) and
+ * null-terminates the username.
+ *
+ * Returns the number of bytes read including the null character.
+ * */
 private int get_username(char *username, int uname_len)
 {
     int actual_len;
@@ -100,12 +129,16 @@ private int get_username(char *username, int uname_len)
     return actual_len;
 }
 
+/* Sends the username to serverfd.
+ *
+ * Returns 1 on error, 0 on success.
+ * */
 private int send_username(int serverfd)
 {
     int uname_len;
     char username[USERNAME_LEN];
 
-    while ((uname_len = get_username(username, sizeof(username) - 1)) <= 0);
+    while ((uname_len = get_username(username, USERNAME_LEN - 1)) <= 0);
     if (send(serverfd, username, uname_len, 0) == -1)
     {
         fprintf(stderr, "Could not send username to server.\n");
@@ -151,7 +184,7 @@ int main(int argc, char **argv)
         npoll = poll(fds, 2, -1);
         if (npoll == -1)
         {
-            perror("client: poll");
+            perror("main: poll");
             close(serverfd);
             exit(1);
         }
@@ -169,24 +202,22 @@ int main(int argc, char **argv)
             nbytes = strlen(buf);
             if (send(serverfd, buf, nbytes, 0) == -1)
             {
-                perror("client: send");
+                perror("main: send");
                 close(serverfd);
                 exit(1);
             }
-
-            memset(&buf, 0, BUFLEN);
         }
 
         /* user receive */
         if (fds[1].revents & POLLIN)
         {
-            nbytes = recv(fds[1].fd, buf, BUFLEN-1, 0);
+            nbytes = recv(fds[1].fd, buf, sizeof(buf)-1, 0);
             if (nbytes <= 0)
             {
                 if (nbytes == 0)
                     puts("Server disconnected.");
                 else
-                    perror("client: recv");
+                    perror("main: recv");
 
                 close(serverfd);
                 exit(1);
@@ -195,7 +226,8 @@ int main(int argc, char **argv)
             term_str(buf, nbytes, buflen, CH_NEWLINE);
             printf("%s", buf);
             fflush(stdout);
-            memset(&buf, 0, BUFLEN);
         }
+
+        memset(buf, 0, buflen);
     }
 }
