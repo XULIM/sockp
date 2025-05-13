@@ -281,6 +281,8 @@ private int recv_msg(struct pfds *pf, int *idx, char *buf, size_t buflen)
         return -1;
     }
 
+    /* TODO: handle series of spaces */
+
     term_str(buf, nbytes, buflen, CH_NEWLINE);
 
     return nbytes;
