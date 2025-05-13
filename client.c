@@ -200,6 +200,13 @@ int main(int argc, char **argv)
             }
 
             nbytes = strlen(buf);
+
+            /* handle unintentional message */
+            if (nbytes == 0 || iscntrl(buf[0]))
+            {
+                continue;
+            }
+
             if (send(serverfd, buf, nbytes, 0) == -1)
             {
                 perror("main: send");
